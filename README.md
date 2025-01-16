@@ -19,14 +19,18 @@ A simple control system for Ambientika ventilation systems that uses the 24V onb
 - **Pull-Down Resistor**: Resistor R10 is connected between the gate and source of the MOSFET as a pull-down resistor to ensure a clear signal at the drain.
 - **Fan Connection**: The fan is connected directly to 24V and GND, with the signal voltage taken from the junction of the voltage divider.
 
+## Schematic
+
+A basic schematic for this project can be found in the `schematics` folder: [Vent_control_Ambientika.pdf](./schematics/Vent_control_Ambientika.pdf).
+
 ## Configuration
 
-The `config` folder contains a sample ESPHome configuration YAML file for setting up the ESP32.
+The `config` folder contains an example ESPHome configuration file named [`example-config.yaml`](./config/example-config.yaml).
 
 ## Usage
 
 1. Connect the components as described in the circuit description.
-2. Upload the ESPHome configuration to the ESP32.
+2. Upload the ESPHome configuration (`example-config.yaml`) to the ESP32.
 3. Power the system using the 24V supply from the Ambientika.
 4. Control the fan's direction and speed using the ESP32.
 
