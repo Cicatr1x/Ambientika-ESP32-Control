@@ -1,0 +1,265 @@
+esphome:
+  name: vent-controller-LOCATION
+  friendly_name: vent-LOCATION
+  platform: ESP32
+  board: esp32dev
+  on_boot:
+    priority: -10  # Low priority to let other components initialize first
+    then:
+      - delay: 2s  # Wait for 2 seconds before setting fan state
+      - lambda: |-
+          // Set fan to an initial PWM level (e.g., 70% PWM)
+          id(current_pwm_level) = 70.0;  // Adjust the percentage as needed
+          id(fanhub_pwm).set_level(id(current_pwm_level) / 100.0);
+          id(fan_pwm_level).publish_state(id(current_pwm_level));  // Update fan PWM sensor
+
+# Enable logging
+logger:
+#  level: INFO
+  
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  platform: esphome
+  password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  domain: CHANGE_ME
+
+  manual_ip:
+    static_ip: CHANGE_ME
+    gateway: CHANGE_ME
+    subnet: CHANGE_ME  
+    dns1: CHANGE_ME
+    dns2: CHANGE_ME
+
+  power_save_mode: none
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Vent Controller Fallback Hotspot"
+    password: "CHANGE_ME"
+
+web_server:
+  version: 3
+
+captive_portal:
+
+##########################################################################################################################
+
+globals:
+  - id: current_pwm_level
+    type: float
+    restore_value: yes  # Ensures the previous PWM level is restored after restart
+    initial_value: '70.0'  # Starts at 0 to avoid full power on reboot
+
+  - id: transition_target
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+
+  - id: final_target_speed
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+
+  - id: step_size
+    type: float
+    restore_value: no
+    initial_value: '2.0'  # PWM step size in percent
+
+  - id: interval_duration
+    type: float
+    restore_value: no
+    initial_value: '0.5'  # Interval duration in seconds
+    
+button:
+  - platform: restart
+    name: "ESP Restart"
+
+output:
+  - platform: ledc
+    pin: GPIO23
+    frequency: 20000 Hz
+    id: fanhub_pwm
+    inverted: true
+
+fan:
+  - platform: speed
+    output: fanhub_pwm
+    name: "PWM Fan"
+    restore_mode: ALWAYS_OFF  # Ensures fan stays off after restart
+
+# Selects for various modes
+select:
+  - platform: template
+    name: "Fan Speed"
+    id: speed_select
+    options:
+      - "Sleep"
+      - "Slow"
+      - "Medium"
+      - "Fast"
+      - "Boost"
+    optimistic: true
+    on_value:
+      then:
+        - lambda: |-
+            std::string fan_speed = id(speed_select).state.c_str();
+            bool laufrichtung = id(fan_direction).state;
+
+            // Define speed targets based on fan direction (Laufrichtung)
+            std::map<std::string, std::array<int, 2>> speeds = {
+              {"Sleep", {59, 81}},
+              {"Slow", {56, 83}},
+              {"Medium", {52, 86}},
+              {"Fast", {42, 96}},
+              {"Boost", {29, 100}}
+            };
+
+            if (speeds.find(fan_speed) != speeds.end()) {
+              // Select PWM based on Laufrichtung (direction)
+              int target_pwm_percentage = laufrichtung ? speeds[fan_speed][0] : speeds[fan_speed][1];
+              id(final_target_speed) = target_pwm_percentage;
+              id(transition_target) = target_pwm_percentage;  // Trigger immediate transition
+              
+              ESP_LOGD("fan_control", "Changing fan speed to %s. Transitioning to final target PWM: %d", fan_speed.c_str(), target_pwm_percentage);
+            } else {
+              ESP_LOGE("fan_control", "Unknown fan speed: %s", fan_speed.c_str());
+            }
+
+# Monitoring sensors
+sensor:
+  - platform: wifi_signal
+    name: "Fan Controller WiFi Signal"
+    update_interval: 60s
+
+  - platform: uptime
+    name: "Fan Controller Uptime"
+
+  - platform: template
+    name: "Fan PWM Level"
+    id: fan_pwm_level
+    lambda: |-
+      return id(current_pwm_level);
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+
+# Helper switches for fan control
+switch:
+  - platform: template
+    name: "Invertiert"
+    id: fan_inverted
+    optimistic: true
+
+  - platform: template
+    name: "Laufrichtung"
+    id: fan_direction
+    optimistic: true
+    on_turn_on:
+      then:
+        - lambda: |-
+            ESP_LOGD("fan_control", "Laufrichtung turned ON.");
+            id(transition_target) = 70.0;  // Transition to 70% first
+
+            // Update final target speed based on the current speed and direction
+            std::string fan_speed = id(speed_select).state.c_str();
+            std::map<std::string, std::array<int, 2>> speeds = {
+              {"Sleep", {59, 81}},
+              {"Slow", {56, 83}},
+              {"Medium", {52, 86}},
+              {"Fast", {42, 96}},
+              {"Boost", {29, 100}}
+            };
+
+            if (speeds.find(fan_speed) != speeds.end()) {
+              int target_pwm_percentage = speeds[fan_speed][0];  // For ON direction
+              id(final_target_speed) = target_pwm_percentage;
+              ESP_LOGD("fan_control", "Setting final target PWM to %d based on Laufrichtung ON.", target_pwm_percentage);
+            }
+
+    on_turn_off:
+      then:
+        - lambda: |-
+            ESP_LOGD("fan_control", "Laufrichtung turned OFF.");
+            id(transition_target) = 70.0;  // Transition to 70% first
+
+            // Update final target speed based on the current speed and direction
+            std::string fan_speed = id(speed_select).state.c_str();
+            std::map<std::string, std::array<int, 2>> speeds = {
+              {"Sleep", {59, 81}},
+              {"Slow", {56, 83}},
+              {"Medium", {52, 86}},
+              {"Fast", {42, 96}},
+              {"Boost", {29, 100}}
+            };
+
+            if (speeds.find(fan_speed) != speeds.end()) {
+              int target_pwm_percentage = speeds[fan_speed][1];  // For OFF direction
+              id(final_target_speed) = target_pwm_percentage;
+              ESP_LOGD("fan_control", "Setting final target PWM to %d based on Laufrichtung OFF.", target_pwm_percentage);
+            }
+
+  - platform: template
+    name: "Automatikmodus"
+    id: fan_automatic_mode
+    optimistic: true
+
+# Automation for Automatikmodus
+interval:
+  - interval: 90s
+    then:
+      if:
+        condition:
+          # Check if Automatikmodus is on
+          switch.is_on: fan_automatic_mode
+        then:
+          # Toggle Laufrichtung (Direction)
+          switch.toggle: fan_direction
+
+  - interval: 500ms  # Check every 500ms
+    then:
+      - lambda: |-
+          float current_pwm = id(current_pwm_level);
+          float step = id(step_size);
+          float target = id(transition_target);
+          
+          // Only perform transition if target is set
+          if (target > 0) {
+            if (current_pwm < target) {
+              current_pwm += step;
+              if (current_pwm > target) {
+                current_pwm = target;
+              }
+            } else if (current_pwm > target) {
+              current_pwm -= step;
+              if (current_pwm < target) {
+                current_pwm = target;
+              }
+            }
+
+            id(fanhub_pwm).set_level(current_pwm / 100.0);
+            id(current_pwm_level) = current_pwm;
+
+            ESP_LOGD("fan_control", "Adjusting PWM: Current=%.2f, Target=%.2f", current_pwm, target);
+          }
+          
+          // Check if we need to continue transitioning
+          if (current_pwm == target) {
+            if (target == 70.0) {
+              // Transition to 70% complete
+              id(transition_target) = id(final_target_speed);  // Transition to final target
+              ESP_LOGD("fan_control", "Transition to 70% complete. Now transitioning to final target.");
+            } else if (target == id(final_target_speed)) {
+              // Final target reached
+              id(transition_target) = 0.0;  // Clear the transition target
+              ESP_LOGD("fan_control", "Transition to final target complete.");
+            }
+          }
+
