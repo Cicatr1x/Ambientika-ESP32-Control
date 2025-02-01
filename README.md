@@ -21,7 +21,11 @@ A simple control system for Ambientika ventilation systems that uses the 24V onb
 
 ## Schematic
 
-A basic schematic for this project can be found in the `schematic` folder: [Vent_control_Ambientika.pdf](./schematics/Vent_control_Ambientika.pdf).
+A basic schematic for this project can be found in the `schematic` folder: [Vent_control_Ambientika.pdf](./schematic/Vent_control_Ambientika.pdf).
+
+Thanks to [@comtel2000](https://github.com/comtel2000) here is a nice and easy to comprehend fritzing schematic.
+
+![fritzing schematic](./schematic/vent_control_ambientika.png)
 
 ## Configuration
 
