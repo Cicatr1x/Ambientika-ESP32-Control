@@ -53,6 +53,9 @@ captive_portal:
 
 ##########################################################################################################################
 
+preferences:
+  flash_write_interval: 3min # Prevents flash writes every 1min in automatic mode
+
 globals:
   - id: current_pwm_level
     type: float
