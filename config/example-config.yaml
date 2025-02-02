@@ -249,7 +249,7 @@ interval:
 
             id(fanhub_pwm).set_level(current_pwm / 100.0);
             id(current_pwm_level) = current_pwm;
-
+            id(fan_pwm_level).publish_state(current_pwm);
             ESP_LOGD("fan_control", "Adjusting PWM: Current=%.2f, Target=%.2f", current_pwm, target);
           }
           
